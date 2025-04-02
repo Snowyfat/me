@@ -3,25 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Links</title>
+    <title>Project Directory</title>
     <style>
         /* Optional: Basic styling for readability */
         body {
             font-family: sans-serif;
             line-height: 1.6;
             margin: 20px;
+            background-color: #f9f9f9; /* Light background */
+        }
+        h1 {
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 10px;
         }
         ul {
             list-style: none; /* Remove default bullets */
             padding: 0;
         }
         li {
-            margin-bottom: 10px; /* Space between items */
-            border-bottom: 1px solid #eee; /* Separator line */
-            padding-bottom: 10px;
-        }
-        li:last-child {
-            border-bottom: none; /* No line after the last item */
+            margin-bottom: 12px; /* Space between items */
+            border: 1px solid #eee; /* Light border around each item */
+            padding: 10px 15px;
+            background-color: #fff; /* White background for items */
+            border-radius: 4px; /* Slightly rounded corners */
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05); /* Subtle shadow */
         }
         a {
             text-decoration: none; /* Remove underline from links */
@@ -33,57 +38,67 @@
         .link-title {
             font-weight: bold;
             display: block; /* Make title appear on its own line */
-            margin-bottom: 3px;
+            margin-bottom: 4px;
+            color: #333; /* Darker color for title */
         }
-        .link-url {
+        .link-path {
            font-size: 0.9em;
            color: #555;
+           font-family: monospace; /* Use monospace for file paths */
         }
     </style>
 </head>
 <body>
 
-    <h1>My Links</h1>
+    <h1>Project Files</h1>
 
     <ul>
         <!-- List Item 1 -->
         <li>
-            <span class="link-title">Javier office</span>
-            <a href="insert link here" class="link-url">office.html</a>
+            <span class="link-title">Insert Page Title/Description Here</span>
+            <a href="filename1.html" class="link-path">filename1.html</a>
+            <!-- Replace filename1.html with the actual path/filename -->
         </li>
 
         <!-- List Item 2 -->
         <li>
-            <span class="link-title">insert title here</span>
-            <a href="insert link here" class="link-url">insert link here</a>
+            <span class="link-title">Insert Page Title/Description Here</span>
+            <a href="filename2.html" class="link-path">filename2.html</a>
+            <!-- Replace filename2.html with the actual path/filename -->
         </li>
 
         <!-- List Item 3 -->
         <li>
-            <span class="link-title">insert title here</span>
-            <a href="insert link here" class="link-url">insert link here</a>
+            <span class="link-title">Insert Page Title/Description Here</span>
+            <a href="subdirectory/page3.html" class="link-path">subdirectory/page3.html</a>
+            <!-- Example for a file inside a folder named 'subdirectory' -->
         </li>
 
         <!-- List Item 4 -->
         <li>
-            <span class="link-title">insert title here</span>
-            <a href="insert link here" class="link-url">insert link here</a>
+            <span class="link-title">Insert Page Title/Description Here</span>
+            <a href="another-page.html" class="link-path">another-page.html</a>
+            <!-- Replace another-page.html with the actual path/filename -->
         </li>
 
         <!-- List Item 5 -->
         <li>
-            <span class="link-title">insert title here</span>
-            <a href="insert link here" class="link-url">insert link here</a>
+            <span class="link-title">Insert Page Title/Description Here</span>
+            <a href="yet-another-page.html" class="link-path">yet-another-page.html</a>
+            <!-- Replace yet-another-page.html with the actual path/filename -->
         </li>
 
         <!--
-        ============================================================
-        COPY AND PASTE THIS BLOCK TO ADD MORE LINKS:
-        (Paste it right above this comment block or after the last <li>)
+        ===================================================================
+        == COPY AND PASTE THIS BLOCK TO ADD MORE FILE LINKS:             ==
+        == (Paste it right above this comment block or after the last <li>) ==
+        ===================================================================
 
         <li>
-            <span class="link-title">insert title here</span>
-            <a href="insert link here" class="link-url">insert link here</a>
+            <span class="link-title">Insert Page Title/Description Here</span>
+            <a href="filename.html" class="link-path">filename.html</a>
+            <!-- Replace BOTH 'filename.html' with the correct relative path and filename -->
+            <!-- Examples: "about.html", "docs/setup.html", "../parent-folder-file.html" -->
         </li>
 
         -->
