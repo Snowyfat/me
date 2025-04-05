@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmic Crusaders (HTML5 - Final Version)</title>
+    <style>
+        /* ... CSS remains the same ... */
+        body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background-color: #111; font-family: Arial, sans-serif; color: white; overflow: hidden; }
+        canvas { border: 1px solid #444; background-color: black; display: block; }
+        #controls-info { position: absolute; top: 10px; left: 10px; font-size: 12px; color: #aaa; opacity: 0.7; }
+        #error-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); color: red; font-size: 16px; padding: 20px; display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; white-space: pre-wrap; overflow-y: auto; box-sizing: border-box; text-align: center; }
+        #error-overlay h2 { margin-top: 0; }
+        #error-overlay pre { background-color: #222; padding: 10px; border-radius: 5px; text-align: left; max-height: 60vh; overflow-y: auto; }
+        #error-overlay button { margin-top: 15px; padding: 8px 15px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <!-- Updated controls info -->
+    <div id="controls-info"> Controls: Arrows/A/D = Move, Space = Shoot, W = Nova, P = Pause, ESC = Pause/Quit Menu, I = Instructions (Menu) </div>
+    <div id="error-overlay"> <!-- ... Error overlay HTML ... -->
+        <h2>An Error Occurred!</h2>
+        <p>Check the browser's developer console (F12) for details.</p>
+        <pre id="error-message"></pre>
+        <button onclick="location.reload()">Reload Game</button>
+    </div>
+
+    <script>
+        'use strict';
+
+        // --- Error Handling Setup ---
+        const errorOverlay = document.getElementById('error-overlay');
+        const errorMessagePre = document.getElementById('error-message');
+        let isLoopRunning = true;
+        function showFatalError(message, errorObject = null) { /* ... Same error handling function ... */ console.error("FATAL ERROR:", message, errorObject); isLoopRunning = false; errorMessagePre.textContent = message + (errorObject ? `\n\n${errorObject.stack || errorObject}` : ''); errorOverlay.style.display = 'flex'; }
+        window.onerror = function (message, source, lineno, colno, error) { if (isLoopRunning) { showFatalError(`Unhandled error: ${message}\nSource: ${source}:${lineno}`, error); } return true; };
+        window.onunhandledrejection = function(event) { if (isLoopRunning) { showFatalError("Unhandled promise rejection:", event.reason); } };
+
+        // --- Game Setup ---
+        const canvas = document.getElementById('gameCanvas');
+        let ctx = null;
+        try { ctx = canvas.getContext('2d'); if (!ctx) { throw new Error("Could not get 2D context"); } } catch (e) { showFatalError("Canvas/Context Error:", e); throw e; }
+        const WIDTH = 800; const HEIGHT = 600;
+        canvas.width = WIDTH; canvas.height = HEIGHT;
+
+        // --- Game Constants ---
+        const FPS = 60; const PLAYER_SPEED = 350; const PLAYER_SHOOT_DELAY = 250;
+        const PLAYER_BULLET_SPEED = 600; const PLAYER_LIVES = 3; const PLAYER_INVULN_DURATION = 2000;
+        const PLAYER_NOVA_CHARGE_TIME = 500; const PLAYER_NOVA_COOLDOWN = 12000;
+        const PLAYER_NOVA_RADIUS = 225;
+        const ENEMY_BULLET_SPEED = 250; const ENEMY_SHOOT_CHANCE_BASE = 0.0008; const ENEMY_MOVE_DOWN_STEP = 10;
+        const ENEMY_DIVE_SPEED = 300; const ENEMY_CHARGE_SPEED = 350; const ENEMY_BEAM_CHARGE_TIME = 1000;
+        const ENEMY_BEAM_DURATION = 500; const ENEMY_BEAM_WIDTH = 10; const ENEMY_FLEET_MOVE_INTERVAL_BASE = 700;
+        const ENEMY_FLEET_STEP_X_BASE = 8; const POWERUP_DROP_CHANCE_BASE = 0.08; const POWERUP_DURATION = 7000;
+        const POWERUP_SPEED = 150; const PARTICLE_COUNT = 15; const PARTICLE_SPEED_MAX = 180; const PARTICLE_LIFESPAN = 0.4;
+        const COLORS = { WHITE: 'white', BLACK: 'black', RED: 'red', GREEN: 'lime', BLUE: 'blue', YELLOW: 'yellow', CYAN: 'cyan', MAGENTA: 'magenta', ORANGE: 'orange', PURPLE: 'purple', LIGHTBLUE: 'lightblue', GRAY: '#888' };
+        const NOVA_VISUAL_DURATION = 300;
+        // --- NEW CONSTANT ---
+        const BEST_SCORE_KEY = 'cosmicCrusadersBestScore'; // Key for localStorage
+
+        // --- Game State ---
+        let score = 0; let wave = 0;
+        let gameState = 'START';
+        let lastScore = null;
+        // --- MODIFIED: Initialize bestScore from localStorage ---
+        let bestScore = parseInt(localStorage.getItem(BEST_SCORE_KEY) || '0');
+        // --- END MODIFICATION ---
+        let player = null;
+        let enemies = []; let playerBullets = []; let enemyBullets = []; let powerups = []; let particles = [];
+        let starfield = null;
+        let enemyFleetMoveTimer = 0; let enemyFleetMoveInterval = ENEMY_FLEET_MOVE_INTERVAL_BASE;
+        let enemyFleetNeedsDownMove = false; let enemyMoveDirection = 1; let enemyFleetSpeedFactor = 1.0;
+        let enemiesSpawnedThisWave = 0;
+        const keysDown = {};
+        let lastTime = 0; let gameTime = 0;
+        let novaVisual = { active: false, timer: 0, x: 0, y: 0 };
+
+        // --- Input Listeners ---
+        window.addEventListener('keydown', (e) => { keysDown[e.key.toLowerCase()] = true; if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase())) e.preventDefault(); });
+        window.addEventListener('keyup', (e) => { keysDown[e.key.toLowerCase()] = false; });
+
+        // --- Helper Functions ---
+        function randomRange(min, max) { return Math.random() * (max - min) + min; }
+        function rectOverlap(rect1, rect2) { if (!rect1 || !rect2) return false; return (rect1.x < rect2.x + rect2.width && rect1.x + rect1.width > rect2.x && rect1.y < rect2.y + rect2.height && rect1.y + rect1.height > rect2.y); }
+        function drawText(text, x, y, size = 18, color = COLORS.WHITE, align = 'left', font = 'Arial') { if (!ctx) return; try { ctx.fillStyle = color; ctx.font = `${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = 'top'; ctx.fillText(text, x, y); } catch(e){ console.error("Error drawing text:", text, e); } }
+        // --- NEW HELPER ---
+        function saveBestScore() {
+            try {
+                localStorage.setItem(BEST_SCORE_KEY, bestScore.toString());
+                console.log(`Saved best score: ${bestScore}`);
+            } catch (e) {
+                console.error("Failed to save best score to localStorage:", e);
+            }
+        }
+        // --- END NEW HELPER ---
+
+        // --- Game Classes ---
+        class Player { /* ... Player class code ... */
+             constructor() { this.width = 40; this.height = 30; this.x = WIDTH / 2 - this.width / 2; this.y = HEIGHT - this.height - 10; this.speed = PLAYER_SPEED; this.lives = PLAYER_LIVES; this.shootTimer = 0; this.shootDelay = PLAYER_SHOOT_DELAY; this.powerupType = null; this.powerupTimer = 0; this.invulnerable = false; this.invulnTimer = 0; this.novaCharging = false; this.novaChargeTimer = 0; this.novaReady = true; this.novaCooldownTimer = 0; this.hidden = false; this.hideTimer = 0; this.color = COLORS.GREEN; }
+             update(dt) { const now = gameTime; if (this.hidden && now > this.hideTimer + PLAYER_INVULN_DURATION) { this.hidden = false; this.invulnerable = true; this.invulnTimer = now + PLAYER_INVULN_DURATION; this.x = WIDTH / 2 - this.width / 2; this.y = HEIGHT - this.height - 10; } if (this.invulnerable && now > this.invulnTimer) { this.invulnerable = false; if (this.powerupType === 'shield') this.endPowerup('shield'); } if (this.powerupType && this.powerupType !== 'shield' && now > this.powerupTimer + POWERUP_DURATION) { this.endPowerup(this.powerupType); } if (this.hidden) return; let moveX = 0; if (keysDown['arrowleft'] || keysDown['a']) moveX -= 1; if (keysDown['arrowright'] || keysDown['d']) moveX += 1; this.x += moveX * this.speed * dt; this.x = Math.max(0, Math.min(WIDTH - this.width, this.x)); this.shootTimer -= dt * 1000; if (keysDown[' '] && this.shootTimer <= 0) { this.shoot(); this.shootTimer = this.shootDelay; }
+                 // --- MODIFIED: Check for 'w' key ---
+                 if (keysDown['w'] && this.novaReady && !this.novaCharging) { this.novaCharging = true; this.novaChargeTimer = 0; }
+                 else if (!keysDown['w'] && this.novaCharging) { this.novaCharging = false; }
+                 // --- END MODIFICATION ---
+                 if (this.novaCharging) { this.novaChargeTimer += dt * 1000; if (this.novaChargeTimer >= PLAYER_NOVA_CHARGE_TIME) { this.activateNovaBurst(); this.novaCharging = false; } } if (!this.novaReady) { this.novaCooldownTimer -= dt * 1000; if (this.novaCooldownTimer <= 0) { this.novaReady = true; } }
+            }
+             draw(ctx) { if (this.hidden || !ctx) return; ctx.fillStyle = this.color; ctx.fillRect(this.x, this.y, this.width, this.height); if (this.invulnerable) { const pulse = Math.abs(Math.sin(gameTime * 0.005)); ctx.strokeStyle = `rgba(0, 0, 255, ${0.5 + pulse * 0.4})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2 + 5, 0, Math.PI * 2); ctx.stroke(); } if (this.novaCharging) { const chargePct = Math.min(1.0, this.novaChargeTimer / PLAYER_NOVA_CHARGE_TIME); const r = Math.floor(255 * (1 - chargePct)); const g = Math.floor(255 * chargePct); ctx.strokeStyle = `rgb(${r},${g},0)`; ctx.lineWidth = 2; ctx.beginPath(); const radius = (this.width * 0.4 * chargePct) + 2; ctx.arc(this.x + this.width / 2, this.y + this.height / 2 - 5, radius, 0, Math.PI * 2); ctx.stroke(); } }
+             shoot() { const bx = this.x + this.width / 2; const by = this.y; if (this.powerupType === 'spread') { playerBullets.push(new Bullet(bx - 10, by, -PLAYER_BULLET_SPEED, -7)); playerBullets.push(new Bullet(bx, by, -PLAYER_BULLET_SPEED, 0)); playerBullets.push(new Bullet(bx + 10, by, -PLAYER_BULLET_SPEED, 7)); } else { playerBullets.push(new Bullet(bx, by, -PLAYER_BULLET_SPEED, 0)); } }
+             activatePowerup(type) { const now = gameTime; if (this.powerupType && this.powerupType !== type) this.endPowerup(this.powerupType); this.powerupType = type; this.powerupTimer = now; if (type === 'rapid') this.shootDelay = PLAYER_SHOOT_DELAY / 2; if (type === 'shield') { this.invulnerable = true; this.invulnTimer = now + POWERUP_DURATION; } }
+             endPowerup(typeEnding) { if (typeEnding === 'rapid' && this.powerupType === 'rapid') this.shootDelay = PLAYER_SHOOT_DELAY; if (this.powerupType === typeEnding) this.powerupType = null; }
+             activateNovaBurst() { if (!this.novaReady || this.hidden) return; const playerCenterX = this.x + this.width / 2; const playerCenterY = this.y + this.height / 2; novaVisual.active = true; novaVisual.timer = NOVA_VISUAL_DURATION; novaVisual.x = playerCenterX; novaVisual.y = playerCenterY; createExplosion(playerCenterX, playerCenterY, 'large', 1.0, 'nova'); let killed = 0; console.log(`Nova Burst: Clearing ${enemyBullets.length} enemy bullets.`); enemyBullets.forEach(bullet => { createExplosion(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2, 'tiny'); killed++; }); enemyBullets = []; this.novaReady = false; this.novaCooldownTimer = PLAYER_NOVA_COOLDOWN; }
+             hit() { if (this.invulnerable || this.hidden) return false; this.lives--; this.hide(); createExplosion(this.x + this.width / 2, this.y + this.height / 2, 'large'); if (this.powerupType) this.endPowerup(this.powerupType); return true; }
+             hide() { this.hidden = true; this.hideTimer = gameTime; this.invulnerable = false; this.novaCharging = false; }
+             reset() { this.x = WIDTH / 2 - this.width / 2; this.y = HEIGHT - this.height - 10; this.lives = PLAYER_LIVES; this.powerupType = null; this.invulnerable = false; this.novaReady = true; this.hidden = false; this.shootDelay = PLAYER_SHOOT_DELAY; }
+             getHitbox() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
+        }
+        class Enemy { /* ... Full Enemy class code ... */
+             constructor(x, y, type) { this.x = x; this.y = y; this.type = type; this.state = 'formation'; this.lastStateChange = gameTime + randomRange(-1000, 1000); this.speedX = 0; this.speedY = 0; this.beamChargeTimer = 0; this.beamFireTimer = 0; this.beamActive = false; switch (type) { case 'grunt': this.width = 30; this.height = 20; this.color = COLORS.RED; break; case 'diver': this.width = 35; this.height = 25; this.color = COLORS.ORANGE; this.shape = 'triangle'; break; case 'charger': this.width = 40; this.height = 20; this.color = COLORS.MAGENTA; break; case 'beamer': this.width = 30; this.height = 30; this.color = COLORS.PURPLE; this.shape = 'circle'; break; default: this.width = 30; this.height = 20; this.color = COLORS.RED; } this.baseColor = this.color; this.isActive = true; }
+             update(dt) { const now = gameTime; if (this.state === 'formation') { this.x += this.speedX * dt; this._behaviorFormation(dt, now); } else if (this.state === 'diving') { this._behaviorDiving(dt, now); } else if (this.state === 'ramming') { this._behaviorRamming(dt, now); } else if (this.state === 'charging_beam') { this._behaviorChargingBeam(dt, now); } else if (this.state === 'firing_beam') { this._behaviorFiringBeam(dt, now); } this.y += this.speedY * dt; if ((this.state === 'diving' || this.state === 'ramming') && this.y > HEIGHT) { this.isActive = false; } if (this.state !== 'firing_beam') { this.beamActive = false; } if (this.state !== 'charging_beam') { this.color = this.baseColor; } }
+             _behaviorFormation(dt, now) { const numEnemies = enemies.length; const shootModifier = enemiesSpawnedThisWave > 0 ? Math.max(0.1, numEnemies / enemiesSpawnedThisWave) : 1.0; const waveBonus = wave * 0.0001; const dynamicChance = (ENEMY_SHOOT_CHANCE_BASE + waveBonus) * shootModifier; if (Math.random() < dynamicChance) { this.shoot(); } const timeSinceChange = now - this.lastStateChange; const diverDelay = Math.max(2000, randomRange(5000, 15000) - (wave * 100)); const chargerDelay = Math.max(3000, randomRange(6000, 12000) - (wave * 100)); const beamerDelay = Math.max(4000, randomRange(8000, 20000) - (wave * 150)); const canDive = this.y + this.height < HEIGHT * 0.75; if (this.type === 'diver' && canDive && timeSinceChange > diverDelay) { this.state = 'diving'; this.speedX = randomRange(-1, 1) * 100; this.speedY = ENEMY_DIVE_SPEED + (wave * 10); this.lastStateChange = now; } else if (this.type === 'charger' && player && !player.hidden && Math.abs((this.x + this.width / 2) - (player.x + player.width / 2)) < this.width * 1.5 && this.y + this.height < player.y && timeSinceChange > chargerDelay) { this.state = 'ramming'; this.speedX = 0; this.speedY = ENEMY_CHARGE_SPEED + (wave * 15); this.lastStateChange = now; } else if (this.type === 'beamer' && timeSinceChange > beamerDelay) { this.state = 'charging_beam'; this.speedX = 0; this.speedY = 0; this.beamChargeTimer = 0; this.lastStateChange = now; } }
+            _behaviorDiving(dt, now) { this.x += this.speedX * dt; } _behaviorRamming(dt, now) { }
+             _behaviorChargingBeam(dt, now) { this.beamChargeTimer += dt * 1000; const chargeRatio = Math.min(1.0, this.beamChargeTimer / ENEMY_BEAM_CHARGE_TIME); const r = Math.floor(255 * (1 - chargeRatio)); const g = 255; const b = Math.floor(255 * chargeRatio); this.color = `rgb(${r},${g},${b})`; if (chargeRatio >= 1.0) { this.state = 'firing_beam'; this.beamFireTimer = 0; this.lastStateChange = now; this.beamActive = true; this.color = this.baseColor; } }
+             _behaviorFiringBeam(dt, now) { this.beamFireTimer += dt * 1000; const beamDuration = Math.max(200, ENEMY_BEAM_DURATION - (wave * 10)); if (this.beamFireTimer > beamDuration) { this.state = 'formation'; this.speedY = 0; this.lastStateChange = now; this.beamActive = false; } else { this.beamActive = true; } }
+             shoot() { let canShoot = false; if (this.state === 'formation') { if (this.type === 'grunt' || this.type === 'beamer') canShoot = true; else if (this.type === 'diver' && Math.random() < 0.1) canShoot = true; } if (canShoot) { const bulletSpeed = ENEMY_BULLET_SPEED + (wave * 10); const spawnX = this.x + this.width / 2 + randomRange(-2, 2); const spawnY = this.y + this.height; enemyBullets.push(new Bullet(spawnX, spawnY, bulletSpeed, 0, COLORS.YELLOW, 6, 12)); } }
+             draw(ctx) { if (!ctx) return; ctx.fillStyle = this.color; if (this.shape === 'circle') { ctx.beginPath(); ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2); ctx.fill(); } else if (this.shape === 'triangle') { ctx.beginPath(); ctx.moveTo(this.x, this.y + this.height); ctx.lineTo(this.x + this.width / 2, this.y); ctx.lineTo(this.x + this.width, this.y + this.height); ctx.closePath(); ctx.fill(); } else { ctx.fillRect(this.x, this.y, this.width, this.height); } if (this.beamActive) { const beamLength = HEIGHT - (this.y + this.height); if (beamLength > 0) { const alpha = 0.6 + Math.abs(Math.sin(gameTime * 0.05)) * 0.3; ctx.fillStyle = `rgba(0, 255, 255, ${alpha})`; ctx.fillRect(this.x + this.width / 2 - ENEMY_BEAM_WIDTH / 2, this.y + this.height, ENEMY_BEAM_WIDTH, beamLength); } } }
+             getHitbox() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
+             getBeamHitbox() { if (this.beamActive) { const beamY = this.y + this.height; const beamLength = HEIGHT - beamY; if (beamLength > 0) { return { x: this.x + this.width / 2 - ENEMY_BEAM_WIDTH / 2, y: beamY, width: ENEMY_BEAM_WIDTH, height: beamLength }; } } return null; }
+        }
+        class Bullet { /* ... Full Bullet class code ... */
+             constructor(x, y, speedY, angle = 0, color = COLORS.WHITE, width = 5, height = 10) { this.x = x - width / 2; this.y = y; this.width = width; this.height = height; this.color = color; this.angle = angle * (Math.PI / 180); this.speedY = speedY; this.speedX = Math.sin(this.angle) * Math.abs(speedY) * 0.3; this.isActive = true; }
+             update(dt) { this.x += this.speedX * dt; this.y += this.speedY * dt; if (this.y + this.height < 0 || this.y > HEIGHT) { this.isActive = false; } }
+             draw(ctx) { if (!ctx) return; ctx.fillStyle = this.color; ctx.fillRect(this.x, this.y, this.width, this.height); }
+             getHitbox() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
+        }
+        class PowerUp { /* ... Full PowerUp class code ... */
+             constructor(x, y, type) { this.x = x; this.y = y; this.type = type; this.speedY = POWERUP_SPEED; this.size = 20; this.isActive = true; switch (type) { case 'shield': this.color = COLORS.BLUE; this.shape = 'circle_border'; break; case 'rapid': this.color = COLORS.YELLOW; this.shape = 'plus'; break; case 'spread': this.color = COLORS.GREEN; this.shape = 'pyramid'; break; default: this.color = COLORS.WHITE; this.shape = 'circle'; } this.x -= this.size / 2; this.y -= this.size / 2; }
+             update(dt) { this.y += this.speedY * dt; if (this.y > HEIGHT) { this.isActive = false; } }
+             draw(ctx) { if (!ctx) return; const centerX = this.x + this.size / 2; const centerY = this.y + this.size / 2; ctx.fillStyle = this.color; ctx.strokeStyle = this.color; ctx.lineWidth = 2; if (this.shape === 'circle') { ctx.beginPath(); ctx.arc(centerX, centerY, this.size / 2, 0, Math.PI * 2); ctx.fill(); } else if (this.shape === 'circle_border') { ctx.beginPath(); ctx.arc(centerX, centerY, this.size / 2, 0, Math.PI * 2); ctx.stroke(); } else if (this.shape === 'plus') { ctx.beginPath(); ctx.moveTo(centerX, this.y + 2); ctx.lineTo(centerX, this.y + this.size - 2); ctx.moveTo(this.x + 2, centerY); ctx.lineTo(this.x + this.size - 2, centerY); ctx.stroke(); } else if (this.shape === 'pyramid') { ctx.beginPath(); ctx.moveTo(centerX, this.y + 2); ctx.lineTo(this.x + 2, this.y + this.size - 2); ctx.lineTo(this.x + this.size - 2, this.y + this.size - 2); ctx.closePath(); ctx.fill(); } }
+             getHitbox() { return { x: this.x, y: this.y, width: this.size, height: this.size }; }
+        }
+        class Particle { /* ... Full Particle class code ... */
+             constructor(x, y, sizeFactor = 1.0, colorSet = PARTICLE_COLORS) { this.x = x; this.y = y; this.size = Math.max(1, randomRange(2, 5) * sizeFactor); const angle = randomRange(0, Math.PI * 2); const speed = randomRange(PARTICLE_SPEED_MAX * 0.2, PARTICLE_SPEED_MAX) * sizeFactor * 0.6; this.speedX = Math.cos(angle) * speed; this.speedY = Math.sin(angle) * speed; this.lifespan = PARTICLE_LIFESPAN * Math.sqrt(sizeFactor) * randomRange(0.8, 1.2); this.initialLifespan = this.lifespan; this.color = colorSet[Math.floor(Math.random() * colorSet.length)]; this.isActive = true; }
+             update(dt) { this.x += this.speedX * dt; this.y += this.speedY * dt; this.lifespan -= dt; if (this.lifespan <= 0) { this.isActive = false; } }
+             draw(ctx) { if (!ctx) return; const alpha = Math.max(0, this.lifespan / this.initialLifespan); ctx.globalAlpha = alpha; ctx.fillStyle = this.color; ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size); ctx.globalAlpha = 1.0; }
+        }
+        class Starfield { /* ... Full Starfield class code ... */
+             constructor(numStars = 150) { this.stars = []; for (let i = 0; i < numStars; i++) { this.stars.push({ x: Math.random() * WIDTH, y: Math.random() * HEIGHT, speed: randomRange(1, 3), size: 0, color: '' }); } }
+             update(dt) { this.stars.forEach(star => { star.y += star.speed; if (star.y > HEIGHT) { star.y = randomRange(-20, -5); star.x = Math.random() * WIDTH; } }); }
+             draw(ctx) { if (!ctx) return; this.stars.forEach(star => { const brightness = Math.floor(50 + star.speed * 40); star.color = `rgb(${brightness},${brightness},${brightness})`; star.size = Math.max(1, Math.floor(star.speed / 2) + 1); if (star.size > 1) { ctx.fillStyle = star.color; ctx.fillRect(star.x - star.size/2, star.y - star.size/2, star.size, star.size); } else { ctx.fillStyle = star.color; ctx.fillRect(star.x, star.y, 1, 1); } }); }
+        }
+
+
+        // --- Game Logic Functions ---
+        function initializeGame() { /* ... Includes try-catch ... */ console.log("Attempting to initialize game state..."); try { score = 0; wave = 0; enemies = []; playerBullets = []; enemyBullets = []; powerups = []; particles = []; if (!starfield) { starfield = new Starfield(); console.log("Starfield created."); } player = new Player(); console.log("Player created."); enemyFleetMoveTimer = 0; enemyFleetMoveInterval = ENEMY_FLEET_MOVE_INTERVAL_BASE; enemyFleetNeedsDownMove = false; enemyMoveDirection = 1; enemyFleetSpeedFactor = 1.0; enemiesSpawnedThisWave = 0; nextWave(); gameState = 'PLAYING'; console.log("Game state initialized successfully. State set to PLAYING."); } catch (error) { showFatalError("Error during game initialization:", error); } }
+        function nextWave() { /* ... Includes try-catch ... */ console.log(`Attempting to start Wave ${wave + 1}`); try { wave++; enemies = []; playerBullets = []; enemyBullets = []; powerups = []; enemyFleetMoveInterval = Math.max(150, ENEMY_FLEET_MOVE_INTERVAL_BASE - wave * 20); enemyFleetSpeedFactor = 1.0 + wave * 0.06; const rows = Math.min(5, 2 + Math.floor(wave / 3)); const cols = Math.min(10, 5 + Math.floor(wave / 2)); const spawnWidth = cols * 45; const startX = Math.max(10, (WIDTH - spawnWidth) / 2); const startY = 60; enemiesSpawnedThisWave = 0; for (let r = 0; r < rows; r++) { for (let c = 0; c < cols; c++) { const x = startX + c * 45; const y = startY + r * 40; let type = 'grunt'; const roll = Math.random(); const bChance = wave >= 4 ? 0.10 + wave * 0.015 : 0; const cChance = wave >= 3 ? 0.10 + wave * 0.015 : 0; const dChance = wave >= 2 ? 0.10 + wave * 0.01 : 0; if (roll < bChance) type = 'beamer'; else if (roll < bChance + cChance) type = 'charger'; else if (roll < bChance + cChance + dChance) type = 'diver'; enemies.push(new Enemy(x, y, type)); enemiesSpawnedThisWave++; } } console.log(`Wave ${wave} spawned ${enemiesSpawnedThisWave} enemies.`); } catch (error) { showFatalError(`Error during nextWave (Wave ${wave+1}):`, error); } }
+        function createExplosion(x, y, size = 'medium', countMult = 1.0, effect = null) { /* ... Includes try-catch and nova updates ... */ try { let num = Math.floor(PARTICLE_COUNT * countMult); let factor = { tiny: 0.5, small: 0.7, medium: 1.0, large: 1.5, nova: 3.0 }[size] || 1.0; let colors = PARTICLE_COLORS; let lifespanMult = 1.0; if (effect === 'nova') { num = 100; colors = [COLORS.CYAN, COLORS.WHITE, COLORS.BLUE, COLORS.LIGHTBLUE]; lifespanMult = 1.5; } for (let i = 0; i < num; i++) { const p = new Particle(x, y, factor, colors); p.lifespan *= lifespanMult; p.initialLifespan = p.lifespan; particles.push(p); } } catch (error) { console.error("Error creating explosion:", error); } }
+        function updateGame(dt) { /* ... Includes try-catch and score saving ... */
+            try {
+                if (!player) { console.error("UpdateGame called but player is null!"); gameState = 'START'; return; }
+                player.update(dt);
+                playerBullets.forEach(b => b.update(dt));
+                enemyBullets.forEach(b => b.update(dt));
+                powerups.forEach(p => p.update(dt));
+                particles.forEach(p => p.update(dt));
+                if (novaVisual.active) { novaVisual.timer -= dt * 1000; if (novaVisual.timer <= 0) { novaVisual.active = false; } }
+                enemyFleetMoveTimer += dt * 1000; let moveFleetThisFrame = false; if (enemyFleetMoveTimer >= enemyFleetMoveInterval) { moveFleetThisFrame = true; enemyFleetMoveTimer = 0; } let moveDown = false, moveSide = false, edgeHit = false; if (moveFleetThisFrame) { moveDown = enemyFleetNeedsDownMove; moveSide = !moveDown; if (moveDown) enemyFleetNeedsDownMove = false; } const stepX = ENEMY_FLEET_STEP_X_BASE * enemyFleetSpeedFactor * enemyMoveDirection; enemies.forEach(enemy => { if (enemy.state === 'formation') { if (moveDown) { enemy.y += ENEMY_MOVE_DOWN_STEP; enemy.speedX = 0; } else if (moveSide) { enemy.speedX = stepX / dt; const nextX = enemy.x + stepX; if ((nextX + enemy.width > WIDTH - 10 && enemyMoveDirection === 1) || (nextX < 10 && enemyMoveDirection === -1)) { edgeHit = true; } } else { enemy.speedX = 0; } enemy.speedY = 0; } enemy.update(dt); }); if (edgeHit) { enemyMoveDirection *= -1; enemyFleetNeedsDownMove = true; enemyFleetMoveInterval = Math.max(50, enemyFleetMoveInterval * 0.97); } const playerHitbox = player.getHitbox(); playerBullets.forEach(bullet => { if (!bullet.isActive) return; enemies.forEach(enemy => { if (!enemy.isActive) return; if (rectOverlap(bullet.getHitbox(), enemy.getHitbox())) { bullet.isActive = false; enemy.isActive = false; score += ({grunt: 10, diver: 15, charger: 20, beamer: 25}[enemy.type] || 5) + Math.floor(wave / 2); createExplosion(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, enemy.type === 'grunt' ? 'small' : 'medium'); if (Math.random() < POWERUP_DROP_CHANCE_BASE + (wave * 0.005)) { powerups.push(new PowerUp(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, randomRange(0,1) < 0.33 ? 'shield' : (randomRange(0,1)<0.5 ? 'rapid' : 'spread') )); } } }); }); powerups.forEach(powerup => { if (!powerup.isActive) return; if (rectOverlap(playerHitbox, powerup.getHitbox())) { player.activatePowerup(powerup.type); powerup.isActive = false; } });
+                // --- MODIFIED: Update best score on game over conditions ---
+                let gameOverTriggered = false;
+                if (!player.hidden) { if (!player.invulnerable) { enemyBullets.forEach(bullet => { if (!bullet.isActive) return; if (rectOverlap(playerHitbox, bullet.getHitbox())) { bullet.isActive = false; if (player.hit() && player.lives <= 0) { gameOverTriggered = true; return; } } }); } if (!gameOverTriggered && !player.invulnerable) { enemies.forEach(enemy => { if (!enemy.isActive || enemy.type !== 'beamer') return; const beamHitbox = enemy.getBeamHitbox(); if (beamHitbox && rectOverlap(playerHitbox, beamHitbox)) { if (player.hit() && player.lives <= 0) { gameOverTriggered = true; return; } } }); } if (!gameOverTriggered && !player.invulnerable) { enemies.forEach(enemy => { if (!enemy.isActive) return; const isDangerous = (enemy.state === 'diving' || enemy.state === 'ramming') || (enemy.state === 'formation' && rectOverlap(playerHitbox, enemy.getHitbox())); if (isDangerous && rectOverlap(playerHitbox, enemy.getHitbox())) { createExplosion(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 'small'); enemy.isActive = false; if (player.hit() && player.lives <= 0) { gameOverTriggered = true; return; } } }); } }
+                playerBullets = playerBullets.filter(b => b.isActive); enemyBullets = enemyBullets.filter(b => b.isActive); enemies = enemies.filter(e => e.isActive); powerups = powerups.filter(p => p.isActive); particles = particles.filter(p => p.isActive);
+                if (gameOverTriggered) {
+                    lastScore = score;
+                    if (score > bestScore) { bestScore = score; saveBestScore(); }
+                    gameState = 'GAME_OVER'; return;
+                }
+                if (enemies.length === 0 && enemiesSpawnedThisWave > 0) { console.log(`Wave ${wave} cleared!`); enemiesSpawnedThisWave = 0; score += wave * 50; nextWave(); }
+                let lowestEnemyY = 0; enemies.forEach(enemy => { if (enemy.state === 'formation') lowestEnemyY = Math.max(lowestEnemyY, enemy.y + enemy.height); });
+                if (lowestEnemyY >= HEIGHT - 60) {
+                    console.log("Game Over: Fleet reached bottom.");
+                    lastScore = score;
+                    if (score > bestScore) { bestScore = score; saveBestScore(); }
+                    gameState = 'GAME_OVER';
+                }
+                // --- END MODIFICATION ---
+            } catch (error) { showFatalError("Error during game update:", error); }
+         }
+        function drawGame() { /* ... Includes nova visual draw ... */ try { if (!ctx) { console.error("drawGame: ctx is null!"); return; } if (!starfield) { console.error("drawGame: starfield is null!"); ctx.fillStyle='black'; ctx.fillRect(0,0,WIDTH,HEIGHT); return; } if (!player) { console.error("drawGame: player is null!"); ctx.fillStyle='black'; ctx.fillRect(0,0,WIDTH,HEIGHT); return; } starfield.draw(ctx); powerups.forEach(p => p.draw(ctx)); playerBullets.forEach(b => b.draw(ctx)); enemyBullets.forEach(b => b.draw(ctx)); enemies.forEach(e => e.draw(ctx)); particles.forEach(p => p.draw(ctx)); player.draw(ctx); if (novaVisual.active) { const progress = 1.0 - (novaVisual.timer / NOVA_VISUAL_DURATION); const currentRadius = PLAYER_NOVA_RADIUS * progress; const alpha = 1.0 - progress; ctx.strokeStyle = `rgba(0, 200, 255, ${alpha * 0.8})`; ctx.lineWidth = 5 * alpha; ctx.beginPath(); ctx.arc(novaVisual.x, novaVisual.y, currentRadius, 0, Math.PI * 2); ctx.stroke(); } drawText(`Score: ${score}`, WIDTH / 2, 5, 18, COLORS.WHITE, 'center'); drawText(`Wave: ${wave}`, WIDTH - 10, 5, 18, COLORS.WHITE, 'right'); const lifeIconWidth = 40 * 0.5; const lifeIconHeight = 30 * 0.5; const lifeIconColor = COLORS.GREEN; for (let i = 0; i < player.lives; i++) { ctx.fillStyle = lifeIconColor; ctx.fillRect(10 + i * (lifeIconWidth + 5), 5, lifeIconWidth, lifeIconHeight); } if (player.powerupType) { const now = gameTime; let duration = POWERUP_DURATION; let startTime = player.powerupTimer; let remaining = 0; if (player.powerupType === 'shield') { remaining = Math.max(0, player.invulnTimer - now); } else { remaining = Math.max(0, (startTime + duration) - now); } const pct = duration > 0 ? remaining / duration : 0; const barLength = 100; const barHeight = 10; const fill = pct * barLength; const barX = 10; const barY = HEIGHT - barHeight - 5; const powerColor = {rapid: COLORS.YELLOW, shield: COLORS.BLUE, spread: COLORS.GREEN}[player.powerupType] || COLORS.WHITE; ctx.fillStyle = powerColor; ctx.fillRect(barX, barY, fill, barHeight); ctx.strokeStyle = COLORS.WHITE; ctx.lineWidth = 2; ctx.strokeRect(barX, barY, barLength, barHeight); drawText(player.powerupType.toUpperCase(), barX + barLength + 5, barY - 2, 12); } const novaColor = player.novaReady ? COLORS.GREEN : (player.novaCharging ? COLORS.YELLOW : COLORS.RED); const novaText = player.novaReady ? "Nova READY" : (player.novaCharging ? "Charging" : "Recharging"); drawText(novaText, WIDTH - 10, HEIGHT - 20, 14, novaColor, 'right'); } catch (error) { showFatalError("Error during game drawing:", error); } }
+        function updateStartScreen(dt) { /* ... Includes try-catch and 'i' key logic ... */ try { if (starfield) starfield.update(dt); let startGame = false; let showInstructions = false; for (const key in keysDown) { if (keysDown[key]) { if (key === 'i') { showInstructions = true; keysDown[key] = false; break; } else if (!['shift', 'control', 'alt', 'meta', 'escape', 'p'].includes(key)) { startGame = true; keysDown[key] = false; break; } } } if (showInstructions) { console.log("Switching to Instructions screen..."); gameState = 'INSTRUCTIONS'; } else if (startGame) { console.log("Key pressed on start screen, initializing game..."); initializeGame(); } } catch (error) { showFatalError("Error during start screen update:", error); } }
+        function drawStartScreen() { /* ... Includes try-catch and best/last score display ... */
+             try {
+                 if (!ctx) return;
+                 if (starfield) starfield.draw(ctx);
+                 else { ctx.fillStyle = 'black'; ctx.fillRect(0, 0, WIDTH, HEIGHT); }
+
+                 drawText("COSMIC CRUSADERS", WIDTH / 2, HEIGHT * 0.15, 58, COLORS.CYAN, 'center');
+
+                 let scoreY = HEIGHT * 0.28; // Starting Y for scores
+                 // --- ADDED: Display Best Score ---
+                 if (bestScore > 0) {
+                     drawText(`Best Score: ${bestScore}`, WIDTH / 2, scoreY, 24, COLORS.YELLOW, 'center');
+                     scoreY += 35; // Move down for last score
+                 }
+                 // --- Display Last Score ---
+                 if (lastScore !== null) {
+                     drawText(`Last Score: ${lastScore}`, WIDTH / 2, scoreY, 22, COLORS.WHITE, 'center');
+                     scoreY += 35; // Move start of controls down
+                 } else if (bestScore > 0) {
+                     scoreY += 35; // Still move controls down if only best score is shown
+                 }
+
+                 const startY = Math.max(HEIGHT * 0.35, scoreY); // Ensure controls start below scores
+
+                 drawText("Arrows / A/D: Move", WIDTH / 2, startY + 10, 20, COLORS.WHITE, 'center');
+                 drawText("Space: Shoot", WIDTH / 2, startY + 40, 20, COLORS.WHITE, 'center');
+                 drawText("Hold W: Nova Burst (Screen Clear)", WIDTH / 2, startY + 70, 20, COLORS.YELLOW, 'center'); // Changed C to W
+                 drawText("P: Pause / ESC: Pause/Quit Menu", WIDTH / 2, startY + 100, 20, COLORS.WHITE, 'center');
+
+                 const bottomStartY = Math.max(startY + 140, HEIGHT * 0.75); // Ensure bottom text doesn't overlap controls
+
+                 drawText("Press 'I' for Instructions", WIDTH / 2, bottomStartY, 20, COLORS.LIGHTBLUE, 'center');
+                 drawText("Press Any Other Key to Begin", WIDTH / 2, bottomStartY + 35, 24, COLORS.GREEN, 'center');
+
+             } catch (error) { showFatalError("Error during start screen drawing:", error); }
+         }
+        function updateInstructionsScreen(dt) { /* ... Includes try-catch ... */ try { if (starfield) starfield.update(dt); if (keysDown['escape']) { gameState = 'START'; keysDown['escape'] = false; } } catch (error) { showFatalError("Error updating instructions screen:", error); } }
+        function drawInstructionsScreen() { /* ... Includes try-catch and layout fix ... */ try { if (!ctx) return; if (starfield) starfield.draw(ctx); else { ctx.fillStyle = 'black'; ctx.fillRect(0, 0, WIDTH, HEIGHT); } let yPos = 35; const lineH = 22; const headH = 28; const sectionSpacing = lineH * 1.5; const indent = 50; const itemIndent = indent + 20; drawText("INSTRUCTIONS", WIDTH / 2, yPos, 34, COLORS.CYAN, 'center'); yPos += headH * 1.6; drawText("Objective:", indent, yPos, 18, COLORS.YELLOW, 'left'); yPos += lineH * 1.1; drawText("- Survive endless waves of alien invaders!", itemIndent, yPos, 15, COLORS.WHITE, 'left'); yPos += lineH; drawText("- Shoot enemies for points and clear waves for bonus.", itemIndent, yPos, 15, COLORS.WHITE, 'left'); yPos += sectionSpacing; drawText("Controls:", indent, yPos, 18, COLORS.YELLOW, 'left'); yPos += lineH * 1.1; drawText("- Arrows / A / D : Move Ship Left/Right", itemIndent, yPos, 15, COLORS.WHITE, 'left'); yPos += lineH; drawText("- Spacebar       : Shoot Bullet", itemIndent, yPos, 15, COLORS.WHITE, 'left'); yPos += lineH; drawText("- Hold W (0.5s)  : Activate Nova Burst (Clears Enemy Bullets)", itemIndent, yPos, 15, COLORS.WHITE, 'left'); yPos += lineH; drawText("- P              : Pause / Resume Game", itemIndent, yPos, 15, COLORS.WHITE, 'left'); yPos += lineH; drawText("- Escape         : Pause Game / Quit to Title (from Pause)", itemIndent, yPos, 15, COLORS.WHITE, 'left'); yPos += sectionSpacing; drawText("Enemies:", indent, yPos, 18, COLORS.YELLOW, 'left'); yPos += lineH * 1.1; drawText("- Grunts (Red): Standard fleet movement, shoot.", itemIndent, yPos, 15, COLORS.WHITE, 'left'); yPos += lineH; drawText("- Divers (Orange): Break formation and dive.", itemIndent, yPos, 15, COLORS.WHITE, 'left'); yPos += lineH; drawText("- Chargers (Magenta): Ram downwards if aligned.", itemIndent, yPos, 15, COLORS.WHITE, 'left'); yPos += lineH; drawText("- Beamers (Purple): Stop, charge, fire a laser beam.", itemIndent, yPos, 15, COLORS.WHITE, 'left'); yPos += sectionSpacing; drawText("Power-ups:", indent, yPos, 18, COLORS.YELLOW, 'left'); yPos += lineH * 1.1; drawText("- Shield (Blue Circle): Temporary invincibility.", itemIndent, yPos, 15, COLORS.WHITE, 'left'); yPos += lineH; drawText("- Rapid Fire (Yellow +): Increased shooting speed.", itemIndent, yPos, 15, COLORS.WHITE, 'left'); yPos += lineH; drawText("- Spread Shot (Green ^): Fire three bullets.", itemIndent, yPos, 15, COLORS.WHITE, 'left'); yPos += lineH; const bottomPromptY = HEIGHT - 45; if (yPos < bottomPromptY - lineH) { /* Space for more text if needed */ } drawText("Press ESC to Return to Main Menu", WIDTH / 2, bottomPromptY, 20, COLORS.GREEN, 'center'); } catch (error) { showFatalError("Error drawing instructions screen:", error); } }
+        function updateGameOverScreen(dt) { /* ... Includes try-catch and score saving ... */
+            try {
+                if(starfield) starfield.update(dt);
+                for (const key in keysDown) {
+                    if (keysDown[key]) {
+                        if (key === 'escape') {
+                            isLoopRunning = false; console.log("Quit via ESC on Game Over.");
+                        } else if (!['shift', 'control', 'alt', 'meta'].includes(key)) {
+                            // Update scores *before* changing state
+                            lastScore = score;
+                            if (score > bestScore) { bestScore = score; saveBestScore(); }
+                            gameState = 'START';
+                            for(let k in keysDown) keysDown[k] = false; // Clear keys
+                        }
+                        break; // Process only one key press
+                    }
+                 }
+             } catch (e) { showFatalError("Error in updateGameOverScreen", e); }
+         }
+        function drawGameOverScreen() { /* ... Includes try-catch and REMOVED esc prompt ... */ try { if (!ctx) return; if(starfield) starfield.draw(ctx); else { ctx.fillStyle = 'black'; ctx.fillRect(0, 0, WIDTH, HEIGHT); } drawText("GAME OVER", WIDTH / 2, HEIGHT / 4, 64, COLORS.RED, 'center'); drawText(`Final Score: ${score}`, WIDTH / 2, HEIGHT / 2 - 20, 30, COLORS.WHITE, 'center'); drawText(`Survived ${wave} waves`, WIDTH / 2, HEIGHT / 2 + 20, 22, COLORS.WHITE, 'center'); drawText("Press Any Key to Return to Title", WIDTH / 2, HEIGHT * 0.75, 20, COLORS.GREEN, 'center'); /* Removed ESC line */ } catch (e) { showFatalError("Error in drawGameOverScreen", e); } }
+        function drawPausedScreen() { /* ... Includes try-catch ... */ try { ctx.fillStyle = "rgba(0, 0, 0, 0.7)"; ctx.fillRect(0, 0, WIDTH, HEIGHT); drawText("PAUSED", WIDTH / 2, HEIGHT / 3, 64, COLORS.YELLOW, 'center'); drawText("Press P to Resume", WIDTH / 2, HEIGHT / 2, 22, COLORS.WHITE, 'center'); drawText("Press ESC to Quit to Title", WIDTH / 2, HEIGHT / 2 + 40, 20, COLORS.WHITE, 'center'); } catch (e) { showFatalError("Error in drawPausedScreen", e); } }
+
+        // --- Main Game Loop ---
+        function gameLoop(currentTime) { /* ... Same as previous fix ... */
+            if (!isLoopRunning) return;
+            try {
+                const dt = Math.min(0.1, (currentTime - lastTime) / 1000); lastTime = currentTime; gameTime += dt * 1000;
+                if (!ctx) { showFatalError("Canvas context is missing in game loop!"); return; }
+                ctx.clearRect(0, 0, WIDTH, HEIGHT);
+                if (gameState !== 'INSTRUCTIONS') { if (keysDown['p']) { if (gameState === 'PLAYING') gameState = 'PAUSED'; else if (gameState === 'PAUSED') gameState = 'PLAYING'; keysDown['p'] = false; } if (keysDown['escape']) { if (gameState === 'PLAYING') gameState = 'PAUSED'; else if (gameState === 'PAUSED') { gameState = 'START'; for(let k in keysDown) keysDown[k] = false; } keysDown['escape'] = false; } }
+                switch (gameState) {
+                    case 'START': updateStartScreen(dt); drawStartScreen(); break;
+                    case 'INSTRUCTIONS': updateInstructionsScreen(dt); drawInstructionsScreen(); break;
+                    case 'PLAYING': updateGame(dt); drawGame(); break;
+                    case 'PAUSED': drawGame(); drawPausedScreen(); break;
+                    case 'GAME_OVER': updateGameOverScreen(dt); drawGameOverScreen(); break;
+                }
+                requestAnimationFrame(gameLoop);
+            } catch (error) { showFatalError("Error in main game loop:", error); }
+        }
+
+        // --- Start the Game ---
+        try { /* ... Same startup logic ... */ console.log("Setting up initial state..."); if (!ctx) throw new Error("Canvas context not available at startup."); starfield = new Starfield(); lastTime = performance.now(); console.log("Requesting first animation frame..."); requestAnimationFrame(gameLoop); console.log("Game loop requested."); } catch (error) { showFatalError("Error during initial setup before game loop:", error); }
+
+    </script>
+</body>
+</html>
