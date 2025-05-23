@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Homework Tracker</title>
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --success-color: #28a745;
+            --warning-color: #ffc107; /* Gold/Orange for "Due today" and Medium Priority */
+            --danger-color: #dc3545;
+            --info-color: #17a2b8; /* For Low Priority, can be used for "days left" */
+            --light-gray: #f0f2f5;
+            --medium-gray: #6c757d;
+            --dark-gray: #343a40;
+            --white: #ffffff;
+            --border-radius: 0.3rem;
+            --box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--light-gray);
+            color: var(--dark-gray);
+            display: flex;
+            justify-content: center;
+        }
+
+        .app-container {
+            width: 100%;
+            max-width: 900px;
+            margin: auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: var(--primary-color);
+            font-size: 2.5em;
+            margin-bottom: 0.2em;
+        }
+
+        .header .subtitle {
+            font-size: 1.1em;
+            color: var(--medium-gray);
+            margin-bottom: 0.2em;
+        }
+        /* User ID removed */
+
+        .add-homework-btn-container {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        #openModalBtn {
+            background-color: var(--primary-color);
+            color: var(--white);
+            border: none;
+            padding: 12px 25px;
+            font-size: 1.1em;
+            font-weight: 500;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        #openModalBtn:hover {
+            background-color: #0056b3;
+        }
+        #openModalBtn .plus-icon {
+            margin-right: 8px;
+            font-weight: bold;
+        }
+
+        .filter-controls-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            background-color: var(--white);
+            padding: 20px;
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+            margin-bottom: 25px;
+        }
+
+        .filter-controls-container div {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .filter-controls-container label {
+            margin-bottom: 5px;
+            font-weight: 500;
+            font-size: 0.9em;
+            color: var(--medium-gray);
+        }
+
+        .filter-controls-container input[type="text"],
+        .filter-controls-container select {
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: var(--border-radius);
+            font-size: 1em;
+            background-color: #f8f9fa;
+        }
+        .filter-controls-container input[type="text"]:focus,
+        .filter-controls-container select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+        }
+
+
+        .homework-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .homework-item {
+            background: var(--white);
+            margin-bottom: 15px;
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+            display: flex;
+            border-left: 5px solid var(--medium-gray); /* Default, will be overridden by priority */
+            transition: border-left-color 0.3s ease;
+        }
+        
+        .item-main-content {
+            flex-grow: 1;
+            padding: 15px;
+        }
+
+        .item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
+        }
+        
+        .task-name {
+            font-weight: bold;
+            font-size: 1.2em;
+            color: var(--dark-gray);
+            word-break: break-word; /* ensure long task names wrap */
+        }
+
+        .status-badge {
+            font-size: 0.8em;
+            padding: 4px 8px;
+            border-radius: 10px;
+            color: var(--white);
+            font-weight: 500;
+            white-space: nowrap;
+            margin-left: 10px; /* Add some space between task name and badge */
+        }
+
+        .description {
+            font-size: 0.95em;
+            color: var(--medium-gray);
+            margin-bottom: 10px;
+            word-break: break-word;
+        }
+
+        .item-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9em;
+            color: var(--medium-gray);
+            margin-bottom: 10px;
+            flex-wrap: wrap; /* Allow wrapping if content is too long */
+            gap: 5px; /* Add gap for wrapped items */
+        }
+        .due-date-info, .priority-text {
+             margin-right: 15px;
+        }
+        .priority-text span {
+            font-weight: bold;
+        }
+
+        .actions {
+            padding: 15px;
+            display: flex;
+            flex-direction: column; /* Stack buttons vertically on smaller screens */
+            justify-content: center;
+            gap: 8px;
+            border-left: 1px solid #eee; /* Separator */
+            flex-shrink: 0; /* Prevent actions from shrinking too much */
+        }
+
+        .action-btn {
+            padding: 6px 10px;
+            border: none;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            font-size: 0.85em;
+            color: var(--white);
+            min-width: 110px; /* Ensure buttons have a decent width */
+            text-align: center;
+            transition: opacity 0.2s ease;
+        }
+        .action-btn:hover {
+            opacity: 0.85;
+        }
+
+        .complete-btn { background-color: var(--success-color); }
+        .edit-btn { background-color: var(--primary-color); }
+        .delete-btn { background-color: var(--danger-color); }
+        
+        .no-items {
+            text-align: center;
+            color: var(--medium-gray);
+            padding: 30px;
+            background-color: var(--white);
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-content {
+            background-color: var(--white);
+            margin: 10% auto;
+            padding: 25px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 5px 15px rgba(0,0,0,.5);
+            width: 90%;
+            max-width: 500px;
+            position: relative;
+        }
+
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            position: absolute;
+            top: 10px;
+            right: 15px;
+        }
+        .close-button:hover,
+        .close-button:focus {
+            color: var(--dark-gray);
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        #modalForm div {
+            margin-bottom: 15px;
+        }
+        #modalForm label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        #modalForm input[type="text"],
+        #modalForm textarea,
+        #modalForm input[type="date"],
+        #modalForm select {
+            width: calc(100% - 22px); /* Account for padding */
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: var(--border-radius);
+            font-size: 1em;
+        }
+        #modalForm textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        #modalForm button {
+            padding: 10px 15px;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            font-size: 1em;
+            margin-right: 10px;
+            border: none;
+        }
+        #modalForm button[type="submit"] {
+            background-color: var(--primary-color);
+            color: var(--white);
+        }
+        #modalForm button[type="button"] { /* Cancel button */
+            background-color: var(--medium-gray);
+            color: var(--white);
+        }
+        #modalForm button:hover {
+            opacity: 0.9;
+        }
+        #modalTitle {
+            margin-top: 0;
+            color: var(--primary-color);
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .filter-controls-container {
+                grid-template-columns: 1fr; /* Stack filters */
+            }
+             .homework-item {
+                flex-direction: column;
+            }
+            .actions {
+                flex-direction: row; /* Buttons side-by-side in column view */
+                border-left: none;
+                border-top: 1px solid #eee;
+                padding-top: 10px;
+                justify-content: flex-end; /* Align buttons to right */
+            }
+            .action-btn {
+                flex-grow: 1; /* Make buttons take equal space if desired */
+            }
+            .item-footer {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 5px;
+            }
+            .modal-content {
+                margin: 5% auto;
+                width: 95%;
+            }
+        }
+        @media (max-width: 480px) {
+            .actions {
+                flex-direction: column; /* Stack buttons on very small screens */
+            }
+            .action-btn {
+                width: 100%;
+                box-sizing: border-box;
+            }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <header class="header">
+            <h1>Homework Tracker</h1>
+            <p class="subtitle">Stay organized and on top of your assignments.</p>
+            <!-- User ID paragraph removed -->
+        </header>
+
+        <div class="add-homework-btn-container">
+            <button id="openModalBtn"><span class="plus-icon">+</span> Add New Homework</button>
+        </div>
+
+        <div class="filter-controls-container">
+            <div>
+                <label for="filterSubject">Filter by Subject/Task</label>
+                <input type="text" id="filterSubject" placeholder="e.g., Math, Essay">
+            </div>
+            <div>
+                <label for="filterStatus">Filter by Status</label>
+                <select id="filterStatus">
+                    <option value="All">All</option>
+                    <option value="Not Started">Not Started</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Completed">Completed</option>
+                </select>
+            </div>
+            <div>
+                <label for="sortOrder">Sort Tasks</label>
+                <select id="sortOrder">
+                    <option value="dueDateAsc">Due Date (Soonest)</option>
+                    <option value="dueDateDesc">Due Date (Latest)</option>
+                    <option value="priority">Priority (High First)</option>
+                    <option value="addedDateDesc">Date Added (Newest)</option>
+                    <option value="addedDateAsc">Date Added (Oldest)</option>
+                </select>
+            </div>
+        </div>
+
+        <ul class="homework-list" id="homeworkList">
+            <!-- Homework items will be populated here -->
+        </ul>
+        <p id="noItemsMessage" class="no-items" style="display: none;">No homework items yet. Click "Add New Homework" to get started!</p>
+    </div>
+
+    <!-- Modal for Adding/Editing Task -->
+    <div id="taskModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" id="closeModalBtn">&times;</span>
+            <h2 id="modalTitle">Add New Homework</h2>
+            <form id="modalForm">
+                <input type="hidden" id="editItemId">
+                <div>
+                    <label for="modalTaskName">Task Name:</label>
+                    <input type="text" id="modalTaskName" required>
+                </div>
+                <div>
+                    <label for="modalDescription">Description:</label>
+                    <textarea id="modalDescription" placeholder="Details about the task..."></textarea>
+                </div>
+                <div>
+                    <label for="modalSubject">Subject:</label>
+                    <input type="text" id="modalSubject" placeholder="e.g., Math, Science">
+                </div>
+                <div>
+                    <label for="modalDueDate">Due Date:</label>
+                    <input type="date" id="modalDueDate">
+                </div>
+                <div>
+                    <label for="modalPriority">Priority:</label>
+                    <select id="modalPriority">
+                        <option value="Low">Low</option>
+                        <option value="Medium" selected>Medium</option>
+                        <option value="High">High</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="modalStatus">Status:</label>
+                    <select id="modalStatus">
+                        <option value="Not Started" selected>Not Started</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Completed">Completed</option>
+                    </select>
+                </div>
+                <button type="submit" id="saveTaskBtn">Save Task</button>
+                <button type="button" id="cancelModalBtn">Cancel</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const homeworkList = document.getElementById('homeworkList');
+            const noItemsMessage = document.getElementById('noItemsMessage');
+            
+            const taskModal = document.getElementById('taskModal');
+            const openModalBtn = document.getElementById('openModalBtn');
+            const closeModalBtn = document.getElementById('closeModalBtn');
+            const cancelModalBtn = document.getElementById('cancelModalBtn');
+            const modalForm = document.getElementById('modalForm');
+            const modalTitle = document.getElementById('modalTitle');
+            const editItemIdInput = document.getElementById('editItemId');
+
+            const modalTaskName = document.getElementById('modalTaskName');
+            const modalDescription = document.getElementById('modalDescription');
+            const modalSubject = document.getElementById('modalSubject');
+            const modalDueDate = document.getElementById('modalDueDate');
+            const modalPriority = document.getElementById('modalPriority');
+            const modalStatus = document.getElementById('modalStatus');
+
+            const filterSubjectInput = document.getElementById('filterSubject');
+            const filterStatusSelect = document.getElementById('filterStatus');
+            const sortOrderSelect = document.getElementById('sortOrder');
+
+            let homeworkItems = JSON.parse(localStorage.getItem('homeworkItemsModernV2')) || []; // Changed key to avoid conflict
+
+            const saveItems = () => {
+                localStorage.setItem('homeworkItemsModernV2', JSON.stringify(homeworkItems));
+            };
+
+            const getPriorityColor = (priority) => {
+                if (priority === 'High') return 'var(--danger-color)';
+                if (priority === 'Medium') return 'var(--warning-color)';
+                if (priority === 'Low') return 'var(--info-color)';
+                return 'var(--medium-gray)';
+            };
+
+            const getStatusColor = (status) => {
+                if (status === 'Completed') return 'var(--success-color)';
+                if (status === 'In Progress') return 'var(--warning-color)';
+                if (status === 'Not Started') return 'var(--medium-gray)';
+                return 'var(--medium-gray)';
+            };
+            
+            const priorityOrder = { "High": 3, "Medium": 2, "Low": 1 };
+
+            const renderItems = () => {
+                homeworkList.innerHTML = ''; 
+                
+                let filteredItems = [...homeworkItems];
+
+                const subjectQuery = filterSubjectInput.value.trim().toLowerCase();
+                if (subjectQuery) {
+                    filteredItems = filteredItems.filter(item => 
+                        (item.subject && item.subject.toLowerCase().includes(subjectQuery)) ||
+                        (item.task && item.task.toLowerCase().includes(subjectQuery))
+                    );
+                }
+
+                const statusFilter = filterStatusSelect.value;
+                if (statusFilter !== 'All') {
+                    filteredItems = filteredItems.filter(item => item.status === statusFilter);
+                }
+                
+                const sortBy = sortOrderSelect.value;
+                if (sortBy === 'dueDateAsc') {
+                    filteredItems.sort((a, b) => {
+                        if (!a.dueDate) return 1; if (!b.dueDate) return -1;
+                        return new Date(a.dueDate) - new Date(b.dueDate);
+                    });
+                } else if (sortBy === 'dueDateDesc') {
+                    filteredItems.sort((a, b) => {
+                        if (!a.dueDate) return 1; if (!b.dueDate) return -1;
+                        return new Date(b.dueDate) - new Date(a.dueDate);
+                    });
+                } else if (sortBy === 'priority') {
+                    filteredItems.sort((a, b) => (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0));
+                } else if (sortBy === 'addedDateDesc') {
+                    filteredItems.sort((a, b) => b.addedDate - a.addedDate);
+                } else if (sortBy === 'addedDateAsc') {
+                    filteredItems.sort((a, b) => a.addedDate - b.addedDate);
+                }
+
+                if (filteredItems.length === 0) {
+                    noItemsMessage.style.display = 'block';
+                    return;
+                }
+                noItemsMessage.style.display = 'none';
+
+                filteredItems.forEach(item => {
+                    const li = document.createElement('li');
+                    li.className = 'homework-item';
+                    li.dataset.id = item.id;
+                    li.style.borderLeftColor = getPriorityColor(item.priority);
+
+                    const mainContentDiv = document.createElement('div');
+                    mainContentDiv.className = 'item-main-content';
+
+                    const itemHeaderDiv = document.createElement('div');
+                    itemHeaderDiv.className = 'item-header';
+                    const taskNameSpan = document.createElement('span');
+                    taskNameSpan.className = 'task-name';
+                    taskNameSpan.textContent = item.task;
+                    const statusBadgeSpan = document.createElement('span');
+                    statusBadgeSpan.className = 'status-badge';
+                    statusBadgeSpan.textContent = item.status;
+                    statusBadgeSpan.style.backgroundColor = getStatusColor(item.status);
+                    itemHeaderDiv.appendChild(taskNameSpan);
+                    itemHeaderDiv.appendChild(statusBadgeSpan);
+                    mainContentDiv.appendChild(itemHeaderDiv);
+
+                    if (item.description) {
+                        const descriptionP = document.createElement('p');
+                        descriptionP.className = 'description';
+                        descriptionP.textContent = item.description;
+                        mainContentDiv.appendChild(descriptionP);
+                    }
+                    
+                    const itemFooterDiv = document.createElement('div');
+                    itemFooterDiv.className = 'item-footer';
+                    
+                    const dueDateInfoSpan = document.createElement('span');
+                    dueDateInfoSpan.className = 'due-date-info';
+
+                    if (item.dueDate) {
+                        const dateObjForDueDate = new Date(item.dueDate);
+                        const userTimezoneOffset = dateObjForDueDate.getTimezoneOffset() * 60000;
+                        const localDateForDisplay = new Date(dateObjForDueDate.getTime() + userTimezoneOffset);
+                        
+                        let displayedDueDateText = `Due: ${localDateForDisplay.toLocaleDateString()}`;
+
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+
+                        const localDueDateMidnight = new Date(localDateForDisplay);
+                        localDueDateMidnight.setHours(0, 0, 0, 0);
+
+                        const timeDiff = localDueDateMidnight.getTime() - today.getTime();
+                        const daysDiffRaw = timeDiff / (1000 * 60 * 60 * 24);
+
+                        let daysStatusText = '';
+                        let daysStatusColor = 'var(--medium-gray)';
+
+                        if (daysDiffRaw >= 1) { // More than or equal to 1 full day away
+                            const days = Math.floor(daysDiffRaw);
+                            daysStatusText = ` (${days} ${days === 1 ? "day left" : "days left"})`;
+                            daysStatusColor = 'var(--info-color)'; // Or keep medium-gray if preferred
+                        } else if (daysDiffRaw >= 0 && daysDiffRaw < 1) { // Due today
+                            daysStatusText = " (Due today)";
+                            daysStatusColor = 'var(--warning-color)';
+                        } else { // Overdue
+                            const daysOverdue = Math.ceil(Math.abs(daysDiffRaw));
+                            daysStatusText = ` (Overdue by ${daysOverdue} ${daysOverdue === 1 ? "day" : "days"})`;
+                            daysStatusColor = 'var(--danger-color)';
+                        }
+                        dueDateInfoSpan.innerHTML = `${displayedDueDateText}<span style="color: ${daysStatusColor}; font-weight: 500; margin-left: 5px;">${daysStatusText}</span>`;
+                    } else {
+                        dueDateInfoSpan.textContent = 'Due: N/A';
+                    }
+                    itemFooterDiv.appendChild(dueDateInfoSpan);
+
+                    const priorityTextSpan = document.createElement('span');
+                    priorityTextSpan.className = 'priority-text';
+                    priorityTextSpan.innerHTML = `Priority: <span style="color: ${getPriorityColor(item.priority)};">${item.priority}</span>`;
+                    itemFooterDiv.appendChild(priorityTextSpan);
+                    
+                    mainContentDiv.appendChild(itemFooterDiv);
+                    li.appendChild(mainContentDiv);
+
+                    const actionsDiv = document.createElement('div');
+                    actionsDiv.className = 'actions';
+
+                    const completeButton = document.createElement('button');
+                    completeButton.className = 'action-btn complete-btn';
+                    if (item.status === 'Completed') {
+                        completeButton.textContent = 'Mark In Progress';
+                    } else {
+                        completeButton.textContent = 'Mark Completed';
+                    }
+                    completeButton.addEventListener('click', () => toggleStatus(item.id));
+                    
+                    const editButton = document.createElement('button');
+                    editButton.className = 'action-btn edit-btn';
+                    editButton.textContent = 'Edit';
+                    editButton.addEventListener('click', () => openEditModal(item.id));
+
+                    const deleteButton = document.createElement('button');
+                    deleteButton.className = 'action-btn delete-btn';
+                    deleteButton.textContent = 'Delete';
+                    deleteButton.addEventListener('click', () => deleteItem(item.id));
+                    
+                    actionsDiv.appendChild(completeButton);
+                    actionsDiv.appendChild(editButton);
+                    actionsDiv.appendChild(deleteButton);
+                    
+                    li.appendChild(actionsDiv);
+                    homeworkList.appendChild(li);
+                });
+            };
+
+            const openNewModal = () => {
+                modalTitle.textContent = 'Add New Homework';
+                editItemIdInput.value = '';
+                modalForm.reset(); 
+                modalStatus.value = 'Not Started';
+                modalPriority.value = 'Medium';
+                taskModal.style.display = 'block';
+                modalTaskName.focus();
+            };
+            
+            const openEditModal = (id) => {
+                const item = homeworkItems.find(i => i.id === id);
+                if (!item) return;
+
+                modalTitle.textContent = 'Edit Homework Task';
+                editItemIdInput.value = item.id;
+                modalTaskName.value = item.task;
+                modalDescription.value = item.description || '';
+                modalSubject.value = item.subject || '';
+                modalDueDate.value = item.dueDate || '';
+                modalPriority.value = item.priority;
+                modalStatus.value = item.status;
+                taskModal.style.display = 'block';
+            };
+
+            const closeModal = () => {
+                taskModal.style.display = 'none';
+                modalForm.reset();
+            };
+
+            modalForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const taskName = modalTaskName.value.trim();
+                if (!taskName) {
+                    alert('Task Name is required.');
+                    modalTaskName.focus();
+                    return;
+                }
+
+                const itemData = {
+                    task: taskName,
+                    description: modalDescription.value.trim(),
+                    subject: modalSubject.value.trim(),
+                    dueDate: modalDueDate.value,
+                    priority: modalPriority.value,
+                    status: modalStatus.value
+                };
+
+                const editingId = parseInt(editItemIdInput.value);
+                if (editingId) {
+                    const itemIndex = homeworkItems.findIndex(i => i.id === editingId);
+                    if (itemIndex > -1) {
+                        homeworkItems[itemIndex] = { ...homeworkItems[itemIndex], ...itemData };
+                    }
+                } else { 
+                    const newItem = {
+                        id: Date.now(),
+                        addedDate: Date.now(),
+                        ...itemData
+                    };
+                    homeworkItems.push(newItem);
+                }
+                
+                saveItems();
+                renderItems();
+                closeModal();
+            });
+            
+            const toggleStatus = (id) => {
+                const itemIndex = homeworkItems.findIndex(i => i.id === id);
+                if (itemIndex > -1) {
+                    const currentStatus = homeworkItems[itemIndex].status;
+                    if (currentStatus === 'Completed') {
+                        homeworkItems[itemIndex].status = 'In Progress';
+                    } else { 
+                        homeworkItems[itemIndex].status = 'Completed';
+                    }
+                    saveItems();
+                    renderItems();
+                }
+            };
+
+            const deleteItem = (id) => {
+                if (confirm('Are you sure you want to delete this homework item?')) {
+                    homeworkItems = homeworkItems.filter(item => item.id !== id);
+                    saveItems();
+                    renderItems();
+                }
+            };
+            
+            openModalBtn.addEventListener('click', openNewModal);
+            closeModalBtn.addEventListener('click', closeModal);
+            cancelModalBtn.addEventListener('click', closeModal);
+            window.addEventListener('click', (event) => {
+                if (event.target === taskModal) {
+                    closeModal();
+                }
+            });
+            
+            filterSubjectInput.addEventListener('input', renderItems);
+            filterStatusSelect.addEventListener('change', renderItems);
+            sortOrderSelect.addEventListener('change', renderItems);
+
+            renderItems();
+        });
+    </script>
+
+</body>
+</html>
